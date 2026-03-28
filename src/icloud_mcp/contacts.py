@@ -198,6 +198,7 @@ async def list_contacts(
                     "phones": [],
                     "emails": [],
                     "addresses": [],
+                    "organization": "",
                     "url": vcard_data['url']
                 }
                 
@@ -227,7 +228,25 @@ async def list_contacts(
                                     contact["addresses"].append(addr_str)
                             except Exception as _e:
                                 continue
-                
+
+                # Extract organization
+                if hasattr(vcard, 'org') and vcard.org and vcard.org.value:
+                    try:
+                        contact["organization"] = str(vcard.org.value[0])
+                    except Exception:
+                        pass
+
+                # Extract birthday
+                if hasattr(vcard, 'bday') and vcard.bday and hasattr(vcard.bday, 'value'):
+                    try:
+                        bday_val = vcard.bday.value
+                        if hasattr(bday_val, 'strftime'):
+                            contact["birthday"] = bday_val.strftime("%Y-%m-%d")
+                        else:
+                            contact["birthday"] = str(bday_val)
+                    except Exception:
+                        pass
+
                 # Only add contact if it has a name or at least one other field
                 if contact["name"] or contact["phones"] or contact["emails"]:
                     result.append(contact)
@@ -272,22 +291,33 @@ async def get_contact(context: Context, contact_id: str) -> Dict[str, Any]:
             "title": str(vcard.title.value) if hasattr(vcard, 'title') else "",
             "url": contact_id
         }
-        
+
+        # Extract birthday
+        if hasattr(vcard, 'bday') and vcard.bday and hasattr(vcard.bday, 'value'):
+            try:
+                bday_val = vcard.bday.value
+                if hasattr(bday_val, 'strftime'):
+                    contact["birthday"] = bday_val.strftime("%Y-%m-%d")
+                else:
+                    contact["birthday"] = str(bday_val)
+            except Exception:
+                pass
+
         # Extract phone numbers
         if hasattr(vcard, 'tel_list'):
             for tel in vcard.tel_list:
                 contact["phones"].append(str(tel.value))
-        
+
         # Extract emails
         if hasattr(vcard, 'email_list'):
             for em in vcard.email_list:
                 contact["emails"].append(str(em.value))
-        
+
         # Extract addresses
         if hasattr(vcard, 'adr_list'):
             for adr in vcard.adr_list:
                 contact["addresses"].append(str(adr.value))
-        
+
         return contact
     
     except Exception as e:
@@ -531,6 +561,45 @@ async def delete_contact(context: Context, contact_id: str) -> Dict[str, str]:
         raise ValueError(f"Failed to delete contact: {str(e)}")
 
 
+async def search_contacts_by_birthday(
+    context: Context,
+    month: int,
+    day: int
+) -> List[Dict[str, Any]]:
+    """
+    Search for contacts born on a specific day and month.
+
+    Args:
+        month: Birth month (1-12)
+        day: Birth day (1-31)
+
+    Returns:
+        List of matching contacts
+    """
+    contacts = await list_contacts(context)
+
+    result = []
+    for contact in contacts:
+        bday_str = contact.get("birthday")
+        if not bday_str:
+            continue
+        try:
+            # Support both YYYY-MM-DD and --MM-DD (year-less vCard format)
+            parts = bday_str.lstrip("-").split("-")
+            if len(parts) == 3:
+                bday_month, bday_day = int(parts[1]), int(parts[2])
+            elif len(parts) == 2:
+                bday_month, bday_day = int(parts[0]), int(parts[1])
+            else:
+                continue
+            if bday_month == month and bday_day == day:
+                result.append(contact)
+        except Exception:
+            continue
+
+    return result
+
+
 async def search_contacts(
     context: Context,
     query: str
@@ -552,6 +621,7 @@ async def search_contacts(
     filtered_contacts = [
         contact for contact in contacts
         if query_lower in contact.get("name", "").lower()
+        or query_lower in contact.get("organization", "").lower()
         or any(query_lower in email.lower() for email in contact.get("emails", []))
         or any(query_lower in phone.lower() for phone in contact.get("phones", []))
     ]

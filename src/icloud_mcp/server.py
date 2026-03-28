@@ -296,6 +296,23 @@ async def contacts_search(context, query: str) -> list | dict:
         return {"error": str(e), "status": 500}
 
 
+@mcp.tool()
+async def contacts_search_by_birthday(context, month: int, day: int) -> list | dict:
+    """
+    Search for contacts born on a specific day and month.
+
+    Args:
+        month: Birth month (1-12)
+        day: Birth day (1-31)
+    """
+    try:
+        return await contacts.search_contacts_by_birthday(context, month, day)
+    except AuthenticationError as e:
+        return {"error": str(e), "status": 401}
+    except Exception as e:
+        return {"error": str(e), "status": 500}
+
+
 # ============================================================================
 # Email Tools (IMAP/SMTP)
 # ============================================================================
